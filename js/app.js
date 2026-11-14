@@ -19,10 +19,10 @@
     tab: "browse",
     query: "",
     body: "",
-    under5k: false,
     under120: false,
     make: "",
-    price: "",
+    priceMin: "",
+    priceMax: "",
     miles: "",
     distance: "",
     sort: "savings",
@@ -135,10 +135,12 @@
 
   function normalize(raw) {
     if (!raw || typeof raw !== "object") return null;
+    var sellerType = raw.seller_type === "private" ? "private" : "craigslist";
     var id = asText(raw.id, 80);
-    var url = safeUrl(raw.url, listingHostOk);
+    var url = sellerType === "private" ? "" : safeUrl(raw.url, listingHostOk);
     var price = asInt(raw.price);
-    if (!id || !url || price == null || price <= 0) return null;
+    if (!id || price == null || price <= 0) return null;
+    if (sellerType !== "private" && !url) return null;
     var year = asInt(raw.year);
     return {
       id: id,
@@ -156,7 +158,19 @@
       source: asText(raw.source, 40) || "Craigslist",
       url: url,
       image_url: safeUrl(raw.image_url, imageHostOk),
-      description: asText(raw.description, 500),
+      description: asText(raw.description, 4000),
+      seller_type: sellerType,
+      seller_name: asText(raw.seller_name, 80),
+      seller_phone: asText(raw.seller_phone, 40),
+      seller_email: asText(raw.seller_email, 80),
+      contact_note: asText(raw.contact_note, 240),
+      contact_preference: asText(raw.contact_preference, 16),
+      owner_id: asText(raw.owner_id, 128),
+      firestore_id: asText(raw.firestore_id, 128),
+      zip: asText(raw.zip, 10),
+      market_comp_count: asInt(raw.market_comp_count) || 0,
+      valuation_source: asText(raw.valuation_source, 40),
+      valuation_label: asText(raw.valuation_label, 400),
       title_status: asText(raw.title_status, 24),
       est_market_value: asInt(raw.est_market_value),
       market_value_method: asText(raw.market_value_method, 80),
@@ -185,7 +199,7 @@
     if (state.tab === "mustangs" && !isMustang(listing)) return false;
     if (state.tab === "saved" && !state.saved.has(listing.id)) return false;
     if (state.body && listing.body_type !== state.body) return false;
-    if (state.under5k && listing.price > 5000) return false;
+    if (window.CarDealsFilters && !window.CarDealsFilters.matchesPrice(listing.price, state.priceMin, state.priceMax)) return false;
     if (state.under120 && (listing.mileage == null || listing.mileage > 120000)) return false;
     if (state.make && listing.make !== state.make) return false;
     if (state.price && listing.price > Number(state.price)) return false;
@@ -242,8 +256,8 @@
 
   function filtersActive() {
     return Boolean(
-      state.query || state.body || state.under5k || state.under120 || state.make ||
-      state.price || state.miles || state.distance || state.sort !== "savings"
+      state.query || state.body || state.under120 || state.make ||
+      state.priceMin || state.priceMax || state.miles || state.distance || state.sort !== "savings"
     );
   }
 
@@ -253,10 +267,13 @@
     state.tab = tab === "mustangs" || tab === "saved" ? tab : "browse";
     state.query = (params.get("q") || "").slice(0, 80);
     state.body = BODY_FROM_URL[(params.get("body") || "").toLowerCase()] || "";
-    state.under5k = params.get("under5k") === "1";
     state.under120 = params.get("under120") === "1";
     state.make = (params.get("make") || "").slice(0, 40);
-    state.price = ["1000", "2000", "3000", "5000"].indexOf(params.get("price") || "") >= 0 ? params.get("price") : "";
+    state.priceMin = window.CarDealsFilters ? window.CarDealsFilters.digitsOnly(params.get("min") || "") : "";
+    state.priceMax = window.CarDealsFilters ? window.CarDealsFilters.digitsOnly(params.get("max") || "") : "";
+    if (!state.priceMax && params.get("under5k") === "1") state.priceMax = "5000";
+    var oldPrice = params.get("price") || "";
+    if (!state.priceMax && ["1000", "2000", "3000", "5000"].indexOf(oldPrice) >= 0) state.priceMax = oldPrice;
     state.miles = ["60000", "80000", "100000", "120000"].indexOf(params.get("miles") || "") >= 0 ? params.get("miles") : "";
     state.distance = ["25", "50", "100", "200", "300"].indexOf(params.get("distance") || "") >= 0 ? params.get("distance") : "";
     var sort = params.get("sort");
@@ -268,10 +285,10 @@
     if (state.tab !== "browse") params.set("tab", state.tab);
     if (state.query) params.set("q", state.query);
     if (state.body) params.set("body", state.body.toLowerCase());
-    if (state.under5k) params.set("under5k", "1");
     if (state.under120) params.set("under120", "1");
     if (state.make) params.set("make", state.make);
-    if (state.price) params.set("price", state.price);
+    if (state.priceMin) params.set("min", state.priceMin);
+    if (state.priceMax) params.set("max", state.priceMax);
     if (state.miles) params.set("miles", state.miles);
     if (state.distance) params.set("distance", state.distance);
     if (state.sort !== "savings") params.set("sort", state.sort);
@@ -315,7 +332,8 @@
 
   function syncControls() {
     $("q").value = state.query;
-    $("price").value = state.price;
+    if ($("price-min")) $("price-min").value = state.priceMin;
+    if ($("price-max")) $("price-max").value = state.priceMax;
     $("miles").value = state.miles;
     $("distance").value = state.distance;
     $("sort").value = state.sort;
@@ -326,7 +344,10 @@
     document.querySelectorAll(".chip[data-body]").forEach(function (chip) {
       chip.setAttribute("aria-pressed", chip.getAttribute("data-body") === state.body ? "true" : "false");
     });
-    $("chip-5k").setAttribute("aria-pressed", state.under5k ? "true" : "false");
+    var preset = window.CarDealsFilters ? window.CarDealsFilters.activePreset(state.priceMin, state.priceMax) : "";
+    document.querySelectorAll("[data-preset]").forEach(function (chip) {
+      chip.setAttribute("aria-pressed", chip.getAttribute("data-preset") === preset ? "true" : "false");
+    });
     $("chip-120").setAttribute("aria-pressed", state.under120 ? "true" : "false");
     ["browse", "mustangs", "saved"].forEach(function (name) {
       $("tab-" + name).setAttribute("aria-selected", state.tab === name ? "true" : "false");
@@ -373,26 +394,131 @@
     return { cls: "badge badge-unrated", label: "Unrated", path: "M5 12h14" };
   }
 
+  function listingImages(listing) {
+    var cloud = window.CarDealsCloud;
+    if (listing.seller_type === "private" && cloud && listing.firestore_id) {
+      var extra = cloud.photos(listing.firestore_id);
+      if (extra && extra.length) return extra;
+    }
+    if (listing.image_urls && listing.image_urls.length) return listing.image_urls;
+    return listing.image_url ? [listing.image_url] : [];
+  }
+
+  function openModal(listing) {
+    var dialog = $("listing-modal");
+    if (!dialog) return;
+    state.modalListing = listing;
+    $("modal-title").textContent = listing.title;
+    $("modal-price").textContent = money(listing.price);
+    var bits = [];
+    if (listing.mileage != null) bits.push(numFmt.format(listing.mileage) + " mi");
+    var place = [listing.city, listing.state].filter(Boolean).join(", ");
+    if (place) bits.push(place);
+    $("modal-meta").textContent = bits.join(" · ");
+    var estimate = listing.valuation_label || (listing.est_market_value
+      ? "Estimate " + money(listing.est_market_value) + (listing.market_comp_count ? " from " + listing.market_comp_count + " comparable listings" : "") + ". Not a Kelley Blue Book value."
+      : "No comparable estimate. This is not a Kelley Blue Book value.");
+    $("modal-estimate").textContent = estimate;
+    $("modal-description").textContent = listing.description || "The seller did not write a description.";
+    var seller = $("modal-seller");
+    seller.replaceChildren();
+    function line(label, value) {
+      if (!value) return;
+      var p = el("p");
+      var strong = document.createElement("strong");
+      strong.textContent = label + " ";
+      p.appendChild(strong);
+      p.appendChild(document.createTextNode(value));
+      seller.appendChild(p);
+    }
+    if (listing.seller_type === "private") {
+      line("Seller", listing.seller_name || "Private seller");
+      line("Phone", listing.seller_phone);
+      line("Email", listing.seller_email);
+      line("Contact", listing.contact_note);
+    } else {
+      line("Seller", "Not published. Craigslist anonymizes sellers.");
+      line("Posted", listing.posted_at);
+      line("Location", place);
+      line("Phone posted on the listing", listing.seller_phone);
+      line("Email posted on the listing", listing.seller_email);
+      line("Contact", listing.contact_note || "Contact is through the Craigslist listing.");
+    }
+    var gallery = $("modal-gallery");
+    gallery.replaceChildren();
+    listingImages(listing).forEach(function (src, index) {
+      var img = document.createElement("img");
+      img.src = src;
+      img.alt = listing.title + " photo " + (index + 1);
+      gallery.appendChild(img);
+    });
+    var actions = $("modal-actions");
+    actions.replaceChildren();
+    if (listing.url) {
+      var link = el("a", "view");
+      link.href = listing.url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "View listing";
+      link.addEventListener("click", function () {
+        if (window.CarDealsCloud) window.CarDealsCloud.track("view_listing", listing.id, listing.source || "");
+      });
+      actions.appendChild(link);
+    }
+    var report = el("button", "text-btn", "Report listing");
+    report.type = "button";
+    report.addEventListener("click", function () {
+      var box = $("modal-report-box");
+      if (box) box.hidden = false;
+    });
+    actions.appendChild(report);
+    var send = $("modal-report-send");
+    if (send) {
+      send.onclick = function () {
+        var reason = $("modal-report-reason") ? $("modal-report-reason").value : "";
+        var status = $("modal-report-status");
+        if (!window.CarDealsCloud || !window.CarDealsCloud.user()) {
+          if (status) status.textContent = "Sign in to report a listing.";
+          return;
+        }
+        window.CarDealsCloud.report(listing.id, reason).then(function (result) {
+          if (status) status.textContent = result.message;
+        });
+      };
+    }
+    if (window.CarDealsA11y) window.CarDealsA11y.open(dialog);
+    if (window.CarDealsCloud) {
+      window.CarDealsCloud.track("listing_open", listing.id, listing.seller_type || "");
+      if (listing.firestore_id) window.CarDealsCloud.loadGallery(listing.firestore_id);
+    }
+  }
+
   function photoNode(listing, index) {
     var media = el("div", "card-media");
-    if (listing.image_url) {
+    var photoBtn = el("button", "photo-btn");
+    photoBtn.type = "button";
+    photoBtn.setAttribute("aria-label", "View details for " + listing.title);
+    var images = listingImages(listing);
+    if (images.length) {
       var img = document.createElement("img");
-      img.alt = listing.title;
+      img.alt = "";
       img.width = 600;
       img.height = 400;
       img.decoding = "async";
       img.loading = index < 3 ? "eager" : "lazy";
       if (index < 3) img.setAttribute("fetchpriority", "high");
-      img.src = listing.image_url;
+      img.src = images[0];
       img.addEventListener("error", function () {
         var tpl = $("photo-fallback");
         if (tpl && tpl.content) img.replaceWith(tpl.content.cloneNode(true));
       });
-      media.appendChild(img);
+      photoBtn.appendChild(img);
     } else {
       var tpl = $("photo-fallback");
-      if (tpl && tpl.content) media.appendChild(tpl.content.cloneNode(true));
+      if (tpl && tpl.content) photoBtn.appendChild(tpl.content.cloneNode(true));
     }
+    photoBtn.addEventListener("click", function () { openModal(listing); });
+    media.appendChild(photoBtn);
     var spec = badgeSpec(listing.deal_rating);
     var badge = el("p", spec.cls);
     badge.appendChild(svg([{ d: spec.path }]));
@@ -485,7 +611,9 @@
     if (bits.length) body.appendChild(el("p", "meta", bits.join(" · ")));
     var prices = el("div", "price-block");
     prices.appendChild(el("p", "price", money(listing.price)));
-    var marketText = listing.est_market_value ? "Est. market avg " + money(listing.est_market_value) : "Est. market avg —";
+    var marketText = listing.est_market_value
+      ? "Est. " + money(listing.est_market_value) + (listing.market_comp_count ? " · " + listing.market_comp_count + " comps" : "") + " · not KBB"
+      : "No comparable estimate · not KBB";
     prices.appendChild(el("p", "market", marketText));
     var delta = deltaNode(listing);
     if (delta) prices.appendChild(delta);
@@ -502,11 +630,23 @@
     link.appendChild(svg([{ d: "M7 17 17 7 M9 7h8v8" }]));
     var sr = el("span", "sr-only", " for " + listing.title + ", opens in a new tab");
     link.appendChild(sr);
+    link.addEventListener("click", function () {
+      if (window.CarDealsCloud) window.CarDealsCloud.track("view_listing", listing.id, listing.source || "");
+    });
     foot.appendChild(link);
     body.appendChild(foot);
     var checked = checkedLabel(listing.last_checked);
     if (checked) body.appendChild(el("p", "checked", checked));
     card.appendChild(body);
+    card.addEventListener("click", function (event) {
+      if (event.target.closest && event.target.closest("a, button")) return;
+      openModal(listing);
+    });
+    if (listing.seller_type === "private") {
+      var badge = el("span", "pill-private", "Private seller");
+      var media = card.querySelector(".card-media");
+      if (media) media.appendChild(badge);
+    }
     return card;
   }
 
@@ -780,10 +920,10 @@
   function clearFilters() {
     state.query = "";
     state.body = "";
-    state.under5k = false;
     state.under120 = false;
     state.make = "";
-    state.price = "";
+    state.priceMin = "";
+    state.priceMax = "";
     state.miles = "";
     state.distance = "";
     state.sort = "savings";
@@ -816,21 +956,39 @@
         render();
       });
     });
-    $("chip-5k").addEventListener("click", function () {
-      state.under5k = !state.under5k;
-      writeUrl();
-      render();
+    document.querySelectorAll("[data-preset]").forEach(function (chip) {
+      chip.addEventListener("click", function () {
+        var max = window.CarDealsFilters.presetMax(chip.getAttribute("data-preset"));
+        if (state.priceMin === "" && state.priceMax === max) state.priceMax = "";
+        else {
+          state.priceMin = "";
+          state.priceMax = max;
+        }
+        writeUrl();
+        render();
+        if (window.CarDealsCloud) window.CarDealsCloud.track("filter", "", chip.getAttribute("data-preset"));
+      });
+    });
+    ["price-min", "price-max"].forEach(function (id) {
+      $(id).addEventListener("input", function () {
+        state[id === "price-min" ? "priceMin" : "priceMax"] = window.CarDealsFilters.digitsOnly($(id).value);
+        $(id).value = state[id === "price-min" ? "priceMin" : "priceMax"];
+        writeUrl();
+        render();
+        if (window.CarDealsCloud) window.CarDealsCloud.track("filter", "", "price");
+      });
     });
     $("chip-120").addEventListener("click", function () {
       state.under120 = !state.under120;
       writeUrl();
       render();
     });
-    ["make", "price", "miles", "distance", "sort"].forEach(function (id) {
+    ["make", "miles", "distance", "sort"].forEach(function (id) {
       $(id).addEventListener("change", function () {
         state[id] = $(id).value;
         writeUrl();
         render();
+        if (window.CarDealsCloud) window.CarDealsCloud.track("filter", "", id);
       });
     });
     $("q").addEventListener("input", function () {
@@ -860,6 +1018,26 @@
       }
       clearFilters();
     });
+    var notice = $("notice");
+    try {
+      if (notice && localStorage.getItem("carDealsNotice") === "1") notice.hidden = true;
+    } catch (err) { /* ignore */ }
+    if ($("notice-ok")) {
+      $("notice-ok").addEventListener("click", function () {
+        try { localStorage.setItem("carDealsNotice", "1"); } catch (err) { /* ignore */ }
+        if (notice) notice.hidden = true;
+      });
+    }
+    if ($("notice-optout")) {
+      $("notice-optout").addEventListener("click", function () {
+        try {
+          localStorage.setItem("carDealsAnalytics", "off");
+          localStorage.setItem("carDealsNotice", "1");
+        } catch (err) { /* ignore */ }
+        if (window.CarDealsCloud && window.CarDealsCloud.setAnalyticsOptOut) window.CarDealsCloud.setAnalyticsOptOut(true);
+        if (notice) notice.hidden = true;
+      });
+    }
     $("theme-light").addEventListener("click", function () { setTheme("light"); });
     $("theme-dark").addEventListener("click", function () { setTheme("dark"); });
     document.addEventListener("keydown", function (event) {
@@ -867,6 +1045,33 @@
     });
     window.addEventListener("resize", syncHeaderOffset);
   }
+
+  if (window.CarDealsCloud) {
+    window.CarDealsCloud.onListings(function (rows) {
+      state.privateRows = rows.map(normalize).filter(Boolean);
+      var scraped = state.scraped || state.listings.filter(function (row) { return row.seller_type !== "private"; });
+      state.scraped = scraped;
+      state.listings = scraped.concat(state.privateRows);
+      fillMakes();
+      render();
+    });
+    window.CarDealsCloud.onPhotos(function () { render(); });
+    document.addEventListener("cardeals-saved", function (event) {
+      (event.detail || []).forEach(function (id) { state.saved.add(id); });
+      persistSaved();
+      render();
+    });
+    window.CarDealsCloud.track("page_view", "", "load");
+  }
+  var originalApply = applyDocument;
+  applyDocument = function (doc, fromPoll) {
+    originalApply(doc, fromPoll);
+    state.scraped = state.listings.filter(function (row) { return row.seller_type !== "private"; });
+    if (state.privateRows && state.privateRows.length) {
+      state.listings = state.scraped.concat(state.privateRows);
+      render();
+    }
+  };
 
   readUrl();
   loadSaved();

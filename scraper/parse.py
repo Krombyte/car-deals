@@ -402,7 +402,8 @@ def parse_listing_html(html: str, url: str, *, status: int = 200) -> dict[str, A
             lat = _float(geo_attr.group(1))
             lon = _float(geo_attr.group(2))
 
-    image_url = _first_image(data.get("image"))
+    image_urls = listing_images(data.get("image"))
+    image_url = image_urls[0] if image_urls else None
     body_html = ""
     body_match = _BODY.search(html)
     if body_match:
@@ -430,6 +431,7 @@ def parse_listing_html(html: str, url: str, *, status: int = 200) -> dict[str, A
         "lon": lon,
         "title_status": title_status,
         "image_url": image_url,
+        "image_urls": image_urls,
         "description": strip_html(body_html),
         "posted_at": posted.group(1) if posted else "",
     }
@@ -445,15 +447,54 @@ def _float(value: Any) -> float | None:
     return number
 
 
-def _first_image(image: Any) -> str | None:
+_PHONE = re.compile(
+    r"(?<!\d)(?:\+?1[-.\s]?)?(?:\(\d{3}\)|\d{3})[-.\s]\d{3}[-.\s]\d{4}(?!\d)"
+)
+_EMAIL = re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")
+
+
+def public_contact(text: str) -> tuple[str, str]:
+    """Phone and email written in the public posting body. Empty when absent."""
+    phone = ""
+    email = ""
+    phone_match = _PHONE.search(text or "")
+    if phone_match:
+        phone = phone_match.group(0)[:40]
+    email_match = _EMAIL.search(text or "")
+    if email_match:
+        email = email_match.group(0)[:80]
+    return phone, email
+
+
+def listing_images(image: Any, *, limit: int = 8) -> list[str]:
+    """HTTPS Craigslist image URLs. The 600x450 size is preferred."""
     candidates: list[str] = []
     if isinstance(image, str):
         candidates = [image]
     elif isinstance(image, list):
         candidates = [item for item in image if isinstance(item, str)]
+    preferred: list[str] = []
+    other: list[str] = []
     for candidate in candidates:
-        # Prefer the 600x450 size Craigslist already generates.
         cleaned = clean_http_url(candidate, allowed_hosts=IMAGE_HOSTS)
-        if cleaned:
-            return cleaned
-    return None
+        if not cleaned:
+            continue
+        if "600x450" in cleaned:
+            preferred.append(cleaned)
+        else:
+            other.append(cleaned)
+    seen: set[str] = set()
+    out: list[str] = []
+    for url in preferred + other:
+        if url in seen:
+            continue
+        seen.add(url)
+        out.append(url)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _first_image(image: Any) -> str | None:
+    images = listing_images(image, limit=1)
+    return images[0] if images else None

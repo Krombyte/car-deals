@@ -1,0 +1,24 @@
+rules_version = '2';
+// Not used while car-deals-d0ebf is on the Spark plan.
+// Photos are Firestore documents under listings/{id}/photos/{0-5}.
+// Deploy this file only after upgrading to Blaze. See FIREBASE_SETUP.md.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /users/{userId}/listings/{listingId}/{fileName} {
+      allow read: if true;
+      allow create, update: if request.auth != null
+        && request.auth.uid == userId
+        && request.auth.token.email_verified == true
+        && listingId.size() <= 128
+        && fileName.matches("[0-5]\\.(jpe?g|png|webp|gif)")
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches("image/(jpeg|png|webp|gif)");
+      allow delete: if request.auth != null
+        && request.auth.uid == userId
+        && request.auth.token.email_verified == true;
+    }
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

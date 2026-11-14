@@ -4,3 +4,6 @@ _site/
 .cache/
 .DS_Store
 data/listings.json.tmp
+*firebase-adminsdk*.json
+serviceAccount*.json
+.firebase/

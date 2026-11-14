@@ -8,7 +8,9 @@ from pathlib import Path
 
 from scraper.market import estimate_market_value, rate_deal
 from scraper.parse import parse_listing_html, split_make_model
+from scraper.prices import price_rejection
 from scraper.sanitize import cap_text, clean_http_url, redact_sensitive, strip_html
+from scraper.valuation import LicensedValuationProvider
 from scraper.__main__ import build_record, dedupe, parse_search
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -70,6 +72,7 @@ class ParseTests(unittest.TestCase):
         self.assertNotIn("<script>", parsed["description"])
         self.assertTrue(parsed["image_url"].startswith("https://images.craigslist.org/"))
         self.assertNotIn("javascript", parsed["image_url"])
+        self.assertEqual(parsed["image_urls"], [parsed["image_url"]])
 
     def test_split_mustang(self):
         make, model, trim = split_make_model("Ford Mustang V6 Convertible")
@@ -132,8 +135,9 @@ class MarketTests(unittest.TestCase):
             self._row("c", 2015, 4400, 110000),
             subject,
         ]
-        estimate, method = estimate_market_value(subject, comps)
-        self.assertEqual(method, "median_make_model_year_pm2_mileage_adj")
+        estimate, method, count = estimate_market_value(subject, comps)
+        self.assertEqual(method, "median_nearby_year_make_model_mileage_adj")
+        self.assertEqual(count, 3)
         self.assertIsNotNone(estimate)
         # Median of the three comps is 4200; subject miles match the median miles.
         self.assertEqual(estimate, 4200)
@@ -147,19 +151,29 @@ class MarketTests(unittest.TestCase):
             self._row("d", 2014, 3000, 120000),
         ]
         low_miles = dict(subject, mileage=60000)
-        high, _ = estimate_market_value(subject, peers + [subject])
-        low, _ = estimate_market_value(low_miles, peers + [low_miles])
+        high, _, _ = estimate_market_value(subject, peers + [subject])
+        low, _, _ = estimate_market_value(low_miles, peers + [low_miles])
         self.assertLess(high, low)
 
-    def test_falls_back_when_the_model_is_rare(self):
+    def test_exact_year_beats_nearby_years(self):
+        subject = self._row("s", 2014, 3000, 100000)
+        peers = [self._row(str(i), 2014, 4000 + i * 100, 100000) for i in range(3)]
+        peers.append(self._row("old", 2010, 9000, 100000))
+        estimate, method, count = estimate_market_value(subject, peers + [subject])
+        self.assertEqual(method, "median_year_make_model_mileage_adj")
+        self.assertEqual(count, 3)
+        self.assertEqual(estimate, 4100)
+
+    def test_rare_model_is_unrated_instead_of_a_make_wide_guess(self):
         subject = self._row("s", 2010, 2000, 90000, model="Probe")
         others = [
             self._row(str(i), 2008, 2500 + i * 100, 80000, model="Focus")
             for i in range(4)
         ]
-        estimate, method = estimate_market_value(subject, others + [subject])
-        self.assertEqual(method, "median_make_body_mileage_adj")
-        self.assertGreater(estimate, 0)
+        estimate, method, count = estimate_market_value(subject, others + [subject])
+        self.assertIsNone(estimate)
+        self.assertEqual(method, "insufficient_comps")
+        self.assertEqual(count, 0)
 
     def test_build_record_enforces_criteria(self):
         base = {
@@ -188,8 +202,33 @@ class MarketTests(unittest.TestCase):
         self.assertLess(kept["distance_mi"], 80)
         salvage = dict(base, title_status="salvage")
         self.assertIsNone(build_record(salvage, now="2026-11-14T00:00:00Z", previous=None))
-        pricey = dict(base, price=9000)
-        self.assertIsNone(build_record(pricey, now="2026-11-14T00:00:00Z", previous=None))
+        wider = dict(base, price=9000)
+        kept_wider = build_record(wider, now="2026-11-14T00:00:00Z", previous=None)
+        self.assertIsNotNone(kept_wider)
+        self.assertEqual(kept_wider["price"], 9000)
+        over_cap = dict(base, price=70000)
+        self.assertIsNone(build_record(over_cap, now="2026-11-14T00:00:00Z", previous=None))
+        high_miles = dict(base, mileage=200000)
+        self.assertIsNotNone(build_record(high_miles, now="2026-11-14T00:00:00Z", previous=None))
+        implausible_miles = dict(base, mileage=1_500_000)
+        self.assertIsNone(build_record(implausible_miles, now="2026-11-14T00:00:00Z", previous=None))
+        for bait_price in (1234, 1111, 999, 12345):
+            self.assertIsNone(
+                build_record(dict(base, price=bait_price), now="2026-11-14T00:00:00Z", previous=None)
+            )
+        call = dict(base, price=8000, description="Nice car. Call for price.")
+        self.assertIsNone(build_record(call, now="2026-11-14T00:00:00Z", previous=None))
+        trade = dict(base, price=8000, description="Trade only, no cash.")
+        self.assertIsNone(build_record(trade, now="2026-11-14T00:00:00Z", previous=None))
+        offer_bait = dict(base, price=1234, description="OBO make offer")
+        self.assertIsNone(build_record(offer_bait, now="2026-11-14T00:00:00Z", previous=None))
+        offer_real = dict(base, price=8500, description="Or best offer, runs well.")
+        self.assertIsNotNone(build_record(offer_real, now="2026-11-14T00:00:00Z", previous=None))
+        phone = dict(base, description="Text Pat at (608) 555-0134 or pat@example.com")
+        with_contact = build_record(phone, now="2026-11-14T00:00:00Z", previous=None)
+        self.assertEqual(with_contact["seller_phone"], "(608) 555-0134")
+        self.assertEqual(with_contact["seller_email"], "pat@example.com")
+        self.assertIn("through the listing", with_contact["contact_note"])
         bait = dict(
             base,
             year=2022,
@@ -225,18 +264,94 @@ class MarketTests(unittest.TestCase):
         self.assertEqual(kept[0]["id"], "1")
 
 
+class PriceRejectionTests(unittest.TestCase):
+    def test_floor_cap_and_patterns(self):
+        self.assertEqual(price_rejection(499), "below_floor")
+        self.assertEqual(price_rejection(500), None)
+        self.assertEqual(price_rejection(60000), None)
+        self.assertEqual(price_rejection(60001), "above_cap")
+        for price in (1, 12, 111, 999, 1111, 1234, 12345, 9999, 1212, 4321):
+            self.assertIsNotNone(price_rejection(price), price)
+        for price in (1999, 2500, 5000, 10000, 15500, 60000):
+            self.assertIsNone(price_rejection(price), price)
+
+    def test_body_disclaimers_and_obo(self):
+        self.assertEqual(price_rejection(8000, "Call for price"), "disclaimer")
+        self.assertEqual(price_rejection(8000, "Trade only"), "disclaimer")
+        self.assertEqual(price_rejection(1234, "obo make offer"), "offer_with_bait")
+        self.assertIsNone(price_rejection(8500, "OBO, serious buyers"))
+        self.assertEqual(price_rejection(1234, "parked in Hoboken"), "placeholder")
+
+
+class LicensedValuationTests(unittest.TestCase):
+    def test_missing_key_does_not_invent_a_book_value(self):
+        provider = LicensedValuationProvider(provider="", api_key="")
+        self.assertFalse(provider.enabled())
+        self.assertIsNone(provider.estimate({"year": 2014, "make": "Ford", "model": "Focus"}))
+
+    def test_key_without_an_adapter_still_returns_nothing(self):
+        provider = LicensedValuationProvider(provider="kbb", api_key="not-a-real-key")
+        self.assertTrue(provider.enabled())
+        self.assertIsNone(provider.estimate({"year": 2014, "make": "Ford", "model": "Focus"}))
+        self.assertNotIn("kbb.com", (ROOT / "scraper" / "valuation.py").read_text(encoding="utf-8"))
+
+
 class ClientSafetyTests(unittest.TestCase):
     def test_page_has_no_inline_handlers_or_innerhtml(self):
         html = (ROOT / "index.html").read_text(encoding="utf-8")
-        js = (ROOT / "js" / "app.js").read_text(encoding="utf-8")
-        theme = (ROOT / "js" / "theme-init.js").read_text(encoding="utf-8")
         for needle in ("onclick=", "onerror=", "onload=", " style=", "javascript:"):
             self.assertNotIn(needle, html)
         self.assertNotIn("unsafe-inline", html)
+        self.assertNotIn("doubleclick", html)
+        self.assertIn("https://www.googletagmanager.com", html)
+        self.assertIn("https://www.google-analytics.com", html)
         self.assertIn("Content-Security-Policy", html)
-        for src in (js, theme):
+        self.assertIn("https://firebasevertexai.googleapis.com", html)
+        self.assertIn('name="google-site-verification"', html)
+        self.assertIn("ti2dnOFEbu7OZCTGQb42gefu-4IJrNHMhrz7kqxezUk", html)
+        self.assertIn('property="og:url"', html)
+        self.assertIn("https://krombyte.github.io/car-deals/", html)
+        robots = (ROOT / "robots.txt").read_text(encoding="utf-8")
+        sitemap = (ROOT / "sitemap.xml").read_text(encoding="utf-8")
+        self.assertIn("https://krombyte.github.io/car-deals/sitemap.xml", robots)
+        self.assertIn("https://krombyte.github.io/car-deals/", sitemap)
+        self.assertIn("https://krombyte.github.io/car-deals/privacy.html", sitemap)
+        for path in (
+            ROOT / "index.html",
+            ROOT / "privacy.html",
+            ROOT / "FAQ.md",
+            ROOT / "js" / "help-prompt.js",
+            ROOT / "js" / "app.js",
+            ROOT / "js" / "help.js",
+            ROOT / "js" / "firebase-client.js",
+        ):
+            lowered = path.read_text(encoding="utf-8").lower()
+            self.assertNotIn("github.com/krombyte", lowered, path.name)
+            self.assertNotIn("github.com/krombyte/car-deals", lowered, path.name)
+        self.assertIn('id="price-min"', html)
+        self.assertIn('id="price-max"', html)
+        self.assertIn('id="help-btn"', html)
+        self.assertIn('role="dialog"', html)
+        for path in (ROOT / "js").glob("*.js"):
+            src = path.read_text(encoding="utf-8")
             for needle in ("innerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function"):
-                self.assertNotIn(needle, src)
+                self.assertNotIn(needle, src, f"{path.name} contains {needle}")
+
+    def test_vendored_firebase_checksums(self):
+        import hashlib
+
+        vendor = ROOT / "js" / "vendor" / "firebase" / "13.3.0"
+        sums = (vendor / "SHA256SUMS").read_text(encoding="utf-8").strip().splitlines()
+        self.assertGreaterEqual(len(sums), 6)
+        for line in sums:
+            digest, name = line.split()
+            payload = (vendor / name).read_bytes()
+            self.assertEqual(hashlib.sha256(payload).hexdigest(), digest, name)
+
+    def test_price_filter_script(self):
+        import subprocess
+
+        subprocess.check_call(["node", "tests/test_price_filter.js"], cwd=ROOT)
 
 
 if __name__ == "__main__":

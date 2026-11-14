@@ -1,7 +1,12 @@
 """Estimate market value from comparable listings already in the dataset.
 
-Nothing here is a Kelley Blue Book price. The figure is the mileage-adjusted
-median of similar posts we actually collected.
+The match is year + make + model, then nearby years, then make + model
+with no year limit. Each tier is adjusted for mileage. A make-only or
+body-type median is not used: that is not the same car.
+
+Nothing here is a Kelley Blue Book price. The figure is the median of
+posts we actually collected. The licensed-provider slot lives in
+scraper.valuation and is empty until an official API adapter is added.
 """
 
 from __future__ import annotations
@@ -22,6 +27,7 @@ MAX_SLOPE_PER_MILE = -0.005
 DEFAULT_SLOPE_PER_MILE = -0.03
 
 MIN_COMPS = 3
+YEAR_WINDOW = 2
 
 
 def median(values: Iterable[float]) -> float:
@@ -85,55 +91,48 @@ def _adjust(listing: dict, comps: list[dict], method: str) -> tuple[int, str]:
     return rounded, method
 
 
-def estimate_market_value(listing: dict, listings: list[dict]) -> tuple[int | None, str]:
-    """Return (estimate dollars, method label).
+def estimate_market_value(listing: dict, listings: list[dict]) -> tuple[int | None, str, int]:
+    """Return (estimate dollars, method label, comparable count).
 
     Tiers, in order, each requiring at least three other listings:
-    1. Same make and model, model year within ±2, mileage-adjusted.
-    2. Same make and model, any year, mileage-adjusted.
-    3. Same make and body type, mileage-adjusted.
-    4. Same make, mileage-adjusted.
+    1. Same year, make, and model, mileage-adjusted.
+    2. Same make and model, model year within ±2, mileage-adjusted.
+    3. Same make and model, any year, mileage-adjusted.
+
+    The count is the number of other listings in the tier that was used.
+    Fewer than three comparables returns no dollar estimate and a count of 0.
     """
     if not _usable(listing):
-        return None, "insufficient_comps"
+        return None, "insufficient_comps", 0
 
     others = [row for row in listings if row is not listing and row.get("id") != listing.get("id") and _usable(row)]
-
-    def year_close(row: dict) -> bool:
-        if not isinstance(listing.get("year"), int) or not isinstance(row.get("year"), int):
-            return False
-        return abs(row["year"] - listing["year"]) <= 2
-
-    tiers: list[tuple[str, list[dict]]] = []
     same_mm = [row for row in others if _same_make_model(listing, row)]
-    tiers.append(("median_make_model_year_pm2_mileage_adj", [row for row in same_mm if year_close(row)]))
-    tiers.append(("median_make_model_mileage_adj", same_mm))
-    if listing.get("body_type") and listing.get("make"):
-        tiers.append(
-            (
-                "median_make_body_mileage_adj",
-                [
-                    row
-                    for row in others
-                    if row.get("make", "").casefold() == listing["make"].casefold()
-                    and row.get("body_type") == listing.get("body_type")
-                ],
-            )
-        )
-    if listing.get("make"):
-        tiers.append(
-            (
-                "median_make_mileage_adj",
-                [row for row in others if row.get("make", "").casefold() == listing["make"].casefold()],
-            )
-        )
+
+    def year_of(row: dict) -> int | None:
+        year = row.get("year")
+        return year if isinstance(year, int) else None
+
+    subject_year = year_of(listing)
+
+    def exact_year(row: dict) -> bool:
+        return subject_year is not None and year_of(row) == subject_year
+
+    def nearby_year(row: dict) -> bool:
+        other = year_of(row)
+        return subject_year is not None and other is not None and abs(other - subject_year) <= YEAR_WINDOW
+
+    tiers: list[tuple[str, list[dict]]] = [
+        ("median_year_make_model_mileage_adj", [row for row in same_mm if exact_year(row)]),
+        ("median_nearby_year_make_model_mileage_adj", [row for row in same_mm if nearby_year(row)]),
+        ("median_make_model_mileage_adj", same_mm),
+    ]
 
     for method, comps in tiers:
         if len(comps) >= MIN_COMPS:
             value, used = _adjust(listing, comps, method)
             if value and used != "insufficient_comps":
-                return value, used
-    return None, "insufficient_comps"
+                return value, used, len(comps)
+    return None, "insufficient_comps", 0
 
 
 def rate_deal(
