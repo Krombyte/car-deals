@@ -4,8 +4,13 @@ Used-car deals near Madison, WI, for Mohamed and his friends. The page
 is a static grid: asking price, an estimated market value computed only
 from the listings we collected, and a link back to the original post.
 
-There are no accounts, cookies, analytics, or payments. Saved cars and
-the color theme stay in `localStorage` on the device.
+Guests keep saved cars and the theme in `localStorage`. Signed-in
+people sync saved cars to Firebase project `car-deals-d0ebf`.
+Google Analytics is on until you opt out. See [PRIVACY.md](PRIVACY.md)
+and [FIREBASE_SETUP.md](FIREBASE_SETUP.md). The browser API key in
+`js/firebase-config.js` must be restricted to `krombyte.github.io/*`
+and localhost. Cloud Storage is not used; photos for private listings
+go in Firestore.
 
 The default theme is teal on a dark navy canvas. The sun/moon control
 switches to an off-white page with a navy accent. The first visit
@@ -72,13 +77,13 @@ What the scraper does:
   La Crosse, Eau Claire, Minneapolis, and the Quad Cities. Each region
   is queried twice: once for every car, and once with `query=mustang`,
   because Craigslist caps each result window.
-- Keeps posts that are still up, priced at $5,000 or less, with at most
-  120,000 miles, a clean title, and a map pin within 300 miles of
-  53703. Expired and 404 posts are dropped. Cross-posts are deduped.
-  Odometer values under 50 are dropped (a required field filled in
-  with 1). Asking prices under $200 are dropped, and a 2010-or-newer car
-  posted under $400 is dropped, because those figures are auction
-  placeholders or monthly payments. Financing spam, lease takeovers,
+- Keeps posts that are still up, priced from $500 through $60,000, with a
+  clean title, and a map pin within 300 miles of 53703. There is no
+  mileage cap. Under 120,000 miles is only a chip on the page. Odometers
+  under 50 or over 1,000,000 are dropped as junk. Placeholder prices
+  ($1234, $1111, and similar) and posts that say the price is not real
+  are dropped. Expired and 404 posts are dropped. Cross-posts are deduped.
+  Financing spam, lease takeovers,
   and parts posts (a topper or a part still in the box) are skipped.
   VINs are removed from the stored description.
 - Sends `CarDealsBot` with a link to this repository. It does not log
@@ -121,8 +126,14 @@ Ratings, also stored on each row so the page does not invent them:
 Thresholds live in `scraper/market.py` (`BARGAIN_BELOW_PCT`,
 `BAD_ABOVE_PCT`) and are copied into `rating_thresholds` in the JSON.
 
-These cars are already the under-$5,000 slice of Craigslist, so the
-"market" is other cheap listings, not the price of a clean retail car.
+The estimate matches the same year, make, and model first, then nearby
+years (±2), then the same make and model at any year. It records how
+many comparables it used. It is not a Kelley Blue Book value. A licensed
+provider can be plugged in later with `VALUATION_PROVIDER` and
+`VALUATION_API_KEY`. See [ROADMAP.md](ROADMAP.md).
+
+The file currently checked in may still be the previous under-$5,000
+scrape until the next scheduled run.
 
 ## Listing schema
 

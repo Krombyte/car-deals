@@ -1,0 +1,150 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+    function verified() {
+      return signedIn() && request.auth.token.email_verified == true;
+    }
+    function ownsListing(listingId) {
+      return signedIn()
+        && get(/databases/$(database)/documents/listings/$(listingId)).data.ownerId == request.auth.uid;
+    }
+    function listingIsPublic(listingId) {
+      return get(/databases/$(database)/documents/listings/$(listingId)).data.status == "public";
+    }
+    function photoSlot(photoId) {
+      return (photoId == "0" && request.resource.data.index == 0)
+        || (photoId == "1" && request.resource.data.index == 1)
+        || (photoId == "2" && request.resource.data.index == 2)
+        || (photoId == "3" && request.resource.data.index == 3)
+        || (photoId == "4" && request.resource.data.index == 4)
+        || (photoId == "5" && request.resource.data.index == 5);
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow create, update: if signedIn() && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(["displayName", "updatedAt"])
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        && request.resource.data.displayName.size() <= 80
+        && request.resource.data.updatedAt is timestamp;
+      allow delete: if false;
+
+      match /saved/{listingId} {
+        allow read: if signedIn() && request.auth.uid == userId;
+        allow create, update: if signedIn() && request.auth.uid == userId
+          && listingId.size() > 0
+          && listingId.size() <= 128
+          && request.resource.data.keys().hasOnly(["savedAt"])
+          && request.resource.data.savedAt is timestamp;
+        allow delete: if signedIn() && request.auth.uid == userId;
+      }
+    }
+
+    match /listings/{listingId} {
+      allow read: if resource.data.status == "public"
+        || (signedIn() && resource.data.ownerId == request.auth.uid);
+      allow create: if verified()
+        && request.resource.data.ownerId == request.auth.uid
+        && validListing();
+      allow update: if verified()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.createdAt == resource.data.createdAt
+        && validListing();
+      allow delete: if verified() && resource.data.ownerId == request.auth.uid;
+
+      match /photos/{photoId} {
+        allow read: if listingIsPublic(listingId)
+          || (signedIn() && resource.data.ownerId == request.auth.uid);
+        allow create, update: if verified()
+          && ownsListing(listingId)
+          && photoSlot(photoId)
+          && request.resource.data.keys().hasOnly(["ownerId", "listingId", "index", "contentType", "image", "createdAt"])
+          && request.resource.data.ownerId == request.auth.uid
+          && request.resource.data.listingId == listingId
+          && request.resource.data.contentType == "image/webp"
+          && request.resource.data.image is bytes
+          && request.resource.data.image.size() > 0
+          && request.resource.data.image.size() <= 204800
+          && request.resource.data.createdAt is timestamp;
+        allow delete: if verified() && resource.data.ownerId == request.auth.uid;
+      }
+    }
+
+    match /reports/{reportId} {
+      allow read: if false;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(["listingId", "reason", "reporterId", "createdAt"])
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.listingId is string
+        && request.resource.data.listingId.size() > 0
+        && request.resource.data.listingId.size() <= 128
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() >= 3
+        && request.resource.data.reason.size() <= 500
+        && request.resource.data.createdAt is timestamp;
+      allow update, delete: if false;
+    }
+
+    match /scraped/{document=**} {
+      allow read, write: if false;
+    }
+
+    function validListing() {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+          "ownerId", "status", "year", "make", "model", "trim", "price", "mileage",
+          "titleStatus", "city", "state", "zip", "description", "contactPreference",
+          "contactValue", "displayName", "createdAt", "updatedAt", "source",
+          "sellerType", "photoCount"
+        ])
+        && data.ownerId == request.auth.uid
+        && data.status == "public"
+        && data.source == "private"
+        && data.sellerType == "private"
+        && data.year is int
+        && data.year >= 1920
+        && data.year <= 2100
+        && data.make is string
+        && data.make.size() > 0
+        && data.make.size() <= 40
+        && data.model is string
+        && data.model.size() > 0
+        && data.model.size() <= 40
+        && data.trim is string
+        && data.trim.size() <= 80
+        && data.price is int
+        && data.price >= 500
+        && data.price <= 60000
+        && data.mileage is int
+        && data.mileage >= 0
+        && data.mileage <= 1000000
+        && data.titleStatus == "clean"
+        && data.city is string
+        && data.city.size() > 0
+        && data.city.size() <= 48
+        && data.state is string
+        && data.state.matches("^[A-Z]{2}$")
+        && data.zip is string
+        && data.zip.matches("^[0-9]{5}(-[0-9]{4})?$")
+        && data.description is string
+        && data.description.size() <= 4000
+        && data.contactPreference in ["email", "phone", "none"]
+        && data.contactValue is string
+        && data.contactValue.size() <= 120
+        && (data.contactPreference == "none" || data.contactValue.size() > 0)
+        && data.displayName is string
+        && data.displayName.size() > 0
+        && data.displayName.size() <= 80
+        && data.photoCount is int
+        && data.photoCount >= 0
+        && data.photoCount <= 6
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+  }
+}

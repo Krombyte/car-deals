@@ -38,10 +38,14 @@ from scraper.parse import (
     LISTING_HOSTS,
     is_blocked,
     is_expired,
+    listing_images,
     parse_listing_html,
     posting_id,
+    public_contact,
 )
+from scraper.prices import MAX_ASKING, MAX_MILES_PLAUSIBLE, MIN_ASKING, MIN_MILES, price_rejection
 from scraper.sanitize import cap_text, clean_http_url, redact_sensitive, strip_html
+from scraper.valuation import LicensedValuationProvider, valuation_label
 
 USER_AGENT = (
     f"CarDealsBot/{__version__} "
@@ -52,9 +56,12 @@ USER_AGENT = (
 # Postal 53703, the centroid Craigslist itself returns for that ZIP.
 ORIGIN = {"city": "Madison", "state": "WI", "postal": "53703", "lat": 43.0775, "lon": -89.3831}
 
-MAX_PRICE = 5000
-MIN_PRICE = 200
-MAX_MILES = 120_000
+# Collection window. The page does not hard-code these into the filter boxes.
+MAX_PRICE = MAX_ASKING
+MIN_PRICE = MIN_ASKING
+# No market mileage cap. Under 120,000 miles stays a chip on the page.
+# Values under MIN_MILES or over MAX_MILES_PLAUSIBLE are dropped as junk data.
+MAX_MILES_CAP = None
 MAX_DISTANCE_MI = 300
 MIN_YEAR = 1920
 MAX_YEAR = datetime.now(timezone.utc).year + 1
@@ -73,7 +80,7 @@ REGIONS = (
     "quadcities",
 )
 
-FILTERS = "cat=cta&max_price=5000&max_auto_miles=120000&auto_title_status=1"
+FILTERS = f"cat=cta&min_price={MIN_PRICE}&max_price={MAX_PRICE}&auto_title_status=1"
 
 LISTING_KEYS = (
     "id",
@@ -91,14 +98,28 @@ LISTING_KEYS = (
     "source",
     "url",
     "image_url",
+    "image_urls",
     "description",
     "title_status",
     "est_market_value",
     "market_value_method",
+    "market_comp_count",
+    "valuation_source",
+    "valuation_label",
     "deal_rating",
+    "seller_type",
+    "seller_name",
+    "seller_phone",
+    "seller_email",
+    "contact_note",
     "first_seen",
     "last_checked",
     "posted_at",
+)
+
+CONTACT_NOTE = (
+    "Craigslist does not publish the seller's account name. "
+    "Contact is through the listing."
 )
 
 
@@ -324,19 +345,16 @@ def build_record(parsed: dict, *, now: str, previous: dict | None) -> dict | Non
         return None
     price = parsed.get("price")
     mileage = parsed.get("mileage")
-    if not isinstance(price, int) or not (MIN_PRICE <= price <= MAX_PRICE):
+    description_text = redact_sensitive(strip_html(parsed.get("description") or ""))
+    if price_rejection(price, f"{parsed.get('title_raw') or ''}\n{description_text}"):
         return None
-    # Newer cars posted this cheap are monthly payments or "drive today" ads.
-    # Older project cars under the same dollar figure are kept.
-    if year >= 2010 and price < 400:
+    blob = f"{parsed.get('title_raw') or ''}\n{description_text}".casefold()
+    if _is_not_a_car_for_sale(blob, price if isinstance(price, int) else 0):
         return None
-    blob = f"{parsed.get('title_raw') or ''}\n{parsed.get('description') or ''}".casefold()
-    if _is_not_a_car_for_sale(blob, price):
-        return None
-    if not isinstance(mileage, int) or not (0 <= mileage <= MAX_MILES):
+    if not isinstance(mileage, int) or not (0 <= mileage <= MAX_MILES_PLAUSIBLE):
         return None
     # Sellers type 1 when Craigslist requires an odometer. That is not a mileage.
-    if mileage < 50:
+    if mileage < MIN_MILES:
         return None
     if (parsed.get("title_status") or "").casefold() != "clean":
         return None
@@ -360,8 +378,10 @@ def build_record(parsed: dict, *, now: str, previous: dict | None) -> dict | Non
     elif body and body not in ("Other",):
         title_parts.append(body)
     title = cap_text(" ".join(part for part in title_parts if part), 140)
-    description = cap_text(redact_sensitive(strip_html(parsed.get("description") or "")), 500)
-    image = clean_http_url(parsed.get("image_url") or "", allowed_hosts=("images.craigslist.org",))
+    description = cap_text(description_text, 4000)
+    images = listing_images(parsed.get("image_urls") or parsed.get("image_url"))
+    image = images[0] if images else None
+    phone, email = public_contact(description)
     posted = cap_text(parsed.get("posted_at") or "", 40)
     first_seen = now
     if previous and isinstance(previous.get("first_seen"), str) and previous["first_seen"]:
@@ -383,11 +403,20 @@ def build_record(parsed: dict, *, now: str, previous: dict | None) -> dict | Non
         "source": "Craigslist",
         "url": url,
         "image_url": image,
+        "image_urls": images,
         "description": description,
         "title_status": "clean",
         "est_market_value": None,
         "market_value_method": "insufficient_comps",
+        "market_comp_count": 0,
+        "valuation_source": "comparable_listings",
+        "valuation_label": valuation_label("comparable_listings", "insufficient_comps", 0, None),
         "deal_rating": "unrated",
+        "seller_type": "craigslist",
+        "seller_name": "",
+        "seller_phone": phone,
+        "seller_email": email,
+        "contact_note": CONTACT_NOTE,
         "first_seen": first_seen,
         "last_checked": now,
         "posted_at": posted,
@@ -432,31 +461,66 @@ def dedupe(records: list[dict]) -> list[dict]:
     return kept
 
 
+_LICENSED_WARNED = False
+
+
 def apply_market(records: list[dict]) -> None:
+    global _LICENSED_WARNED
+    provider = LicensedValuationProvider()
+    if provider.enabled() and not _LICENSED_WARNED:
+        _LICENSED_WARNED = True
+        print(
+            f"[valuation] {provider.provider} is selected, but no licensed adapter "
+            "is implemented yet; using comparable listings",
+            file=sys.stderr,
+        )
     for row in records:
-        estimate, method = estimate_market_value(row, records)
+        licensed = provider.estimate(row)
+        if licensed and licensed[0]:
+            estimate, method, count = licensed
+            source = provider.provider
+        else:
+            estimate, method, count = estimate_market_value(row, records)
+            source = "comparable_listings"
         row["est_market_value"] = estimate
         row["market_value_method"] = method
+        row["market_comp_count"] = count
+        row["valuation_source"] = source
+        row["valuation_label"] = valuation_label(source, method, count, estimate)
         row["deal_rating"] = rate_deal(row["price"], estimate)
 
 
 def document(records: list[dict], *, now: str) -> dict:
     ordered = [{key: row.get(key) for key in LISTING_KEYS} for row in sorted(records, key=lambda r: r["id"])]
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at": now,
         "source_note": (
             "Listings were read from public Craigslist search and posting pages. "
-            "est_market_value is a mileage-adjusted median of comparable listings "
-            "in this file, not a Kelley Blue Book or dealer appraisal."
+            "est_market_value is a mileage-adjusted median of the same year, make, "
+            "and model in this file (nearby years, then any year of that make and "
+            "model, when the exact year does not have enough cars). It is not a "
+            "Kelley Blue Book value. A licensed provider can replace it when "
+            "VALUATION_PROVIDER and VALUATION_API_KEY are set and an adapter is added."
         ),
         "origin": ORIGIN,
         "criteria": {
+            "min_price": MIN_PRICE,
             "max_price": MAX_PRICE,
-            "max_mileage": MAX_MILES,
+            "min_mileage": MIN_MILES,
+            "max_mileage": MAX_MILES_CAP,
+            "max_mileage_plausible": MAX_MILES_PLAUSIBLE,
+            "mileage_note": (
+                "No market mileage cap. Under 120,000 miles is a filter on the page. "
+                "Odometers under 50 or over 1,000,000 are dropped as placeholders or implausible."
+            ),
             "title_status": "clean",
             "radius_mi": MAX_DISTANCE_MI,
             "category": "cars+trucks",
+            "price_note": (
+                "Asking prices from $500 through $60,000. Placeholder and bait prices "
+                "are dropped. The page's min and max boxes are not limited to this window."
+            ),
         },
         "rating_thresholds": {
             "bargain_at_or_below_pct": BARGAIN_BELOW_PCT,
