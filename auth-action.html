@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Confirm your email — Car Deals</title>
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://firebase.googleapis.com; object-src 'none'; base-uri 'self'; form-action 'none'; upgrade-insecure-requests">
+  <script src="js/theme-init.js"></script>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <main class="wrap auth-action" id="main">
+    <h1 id="action-title">Confirm your email</h1>
+    <p id="action-status">This link is ready. Click the button when you mean to use it. Opening the message is not enough, so a mail scanner does not use up the code.</p>
+    <button type="button" class="primary" id="action-verify" hidden>Verify email</button>
+    <form id="action-reset" class="form-grid" hidden>
+      <label class="field">New password<input id="action-password" type="password" minlength="8" maxlength="100" autocomplete="new-password"></label>
+      <button type="submit" class="primary">Save password</button>
+    </form>
+    <p><a href="./">Back to Car Deals</a></p>
+  </main>
+  <script src="js/firebase-config.js"></script>
+  <script type="module" src="js/auth-action.js"></script>
+</body>
+</html>

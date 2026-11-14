@@ -179,6 +179,7 @@ function authMessage(code) {
     show("auth-password-label", mode !== "reset");
     show("auth-name-label", mode === "up");
     show("auth-google", mode !== "reset");
+    show("auth-or", mode !== "reset");
     ["in", "up", "reset"].forEach(function (name) {
       var tab = document.getElementById("auth-tab-" + name);
       if (tab) tab.setAttribute("aria-selected", name === mode ? "true" : "false");
@@ -252,8 +253,11 @@ function authMessage(code) {
     var year = Number(data.year);
     var price = Number(data.price);
     var miles = Number(data.mileage);
-    var nowYear = new Date().getFullYear() + 1;
-    if (!Number.isInteger(year) || year < 1920 || year > nowYear) return "Enter a model year from 1920 through " + nowYear + ".";
+    var nowYear = window.CarDealsVehicles ? window.CarDealsVehicles.yearMax() : new Date().getFullYear();
+    var minYear = window.CarDealsVehicles ? window.CarDealsVehicles.YEAR_MIN : 1950;
+    if (!Number.isInteger(year) || year < minYear || year > nowYear) {
+      return "Enter a model year from " + minYear + " through " + nowYear + ".";
+    }
     if (!data.make || !data.model) return "Enter the make and model.";
     if (!Number.isInteger(price) || price < 500 || price > 60000) return "Enter a price from $500 through $60,000.";
     if (window.CarDealsFilters && window.CarDealsFilters.isPlaceholderPrice(price)) {
@@ -284,8 +288,8 @@ function authMessage(code) {
       make: cleanText(fieldValue("sell-make"), 40),
       model: cleanText(fieldValue("sell-model"), 40),
       trim: cleanText(fieldValue("sell-trim"), 80),
-      price: Number(fieldValue("sell-price")),
-      mileage: Number(fieldValue("sell-miles")),
+      price: Number(window.CarDealsVehicles ? window.CarDealsVehicles.digitsOnly(fieldValue("sell-price"), 7) : fieldValue("sell-price")),
+      mileage: Number(window.CarDealsVehicles ? window.CarDealsVehicles.digitsOnly(fieldValue("sell-miles"), 7) : fieldValue("sell-miles")),
       titleStatus: fieldValue("sell-title-status"),
       city: cleanText(fieldValue("sell-city"), 48),
       state: cleanText(fieldValue("sell-state"), 2).toUpperCase(),
@@ -480,10 +484,10 @@ function authMessage(code) {
   }
 
   function blobFromPhoto(data) {
-    if (!data || data.contentType !== "image/webp" || !data.image || typeof data.image.toUint8Array !== "function") return "";
+    if (!data || (data.contentType !== "image/webp" && data.contentType !== "image/jpeg") || !data.image || typeof data.image.toUint8Array !== "function") return "";
     var bytes = data.image.toUint8Array();
     if (!bytes || bytes.length < 32 || bytes.length > 200 * 1024) return "";
-    return URL.createObjectURL(new Blob([bytes], { type: "image/webp" }));
+    return URL.createObjectURL(new Blob([bytes], { type: data.contentType }));
   }
 
   function remember(firestoreId, urls) {
@@ -551,6 +555,13 @@ function authMessage(code) {
     } catch (err) { /* the heart still sticks on this device */ }
   }
 
+  function mailSettings() {
+    return {
+      url: "https://krombyte.github.io/car-deals/auth-action.html",
+      handleCodeInApp: true,
+    };
+  }
+
   async function signUp(email, password, name) {
     text("auth-error", "");
     if (String(password || "").length < 8) {
@@ -560,7 +571,7 @@ function authMessage(code) {
     try {
       var cred = await state.authMod.createUserWithEmailAndPassword(state.auth, cleanText(email, 120), password);
       if (name) await state.authMod.updateProfile(cred.user, { displayName: cleanText(name, 80) });
-      await state.authMod.sendEmailVerification(cred.user);
+      await state.authMod.sendEmailVerification(cred.user, mailSettings());
       await state.fs.setDoc(state.fs.doc(state.db, "users", cred.user.uid), {
         displayName: cleanText(name || email, 80),
         updatedAt: state.fs.serverTimestamp(),
@@ -601,7 +612,7 @@ function authMessage(code) {
   async function resetPassword(email) {
     text("auth-error", "");
     try {
-      await state.authMod.sendPasswordResetEmail(state.auth, cleanText(email, 120));
+      await state.authMod.sendPasswordResetEmail(state.auth, cleanText(email, 120), mailSettings());
       text("auth-error", "If that inbox is registered, a reset message is on the way.");
     } catch (err) {
       text("auth-error", authMessage(err && err.code));
@@ -611,7 +622,7 @@ function authMessage(code) {
   async function sendVerification() {
     if (!state.user) return;
     try {
-      await state.authMod.sendEmailVerification(state.user);
+      await state.authMod.sendEmailVerification(state.user, mailSettings());
       text("auth-error", "Verification email sent.");
       text("sell-error", "Verification email sent.");
     } catch (err) {
@@ -627,11 +638,12 @@ function authMessage(code) {
       if (i < blobs.length) {
         var bytes = new Uint8Array(await blobs[i].arrayBuffer());
         if (bytes.length > 200 * 1024) throw new Error("size");
+        var mime = blobs[i].type === "image/jpeg" ? "image/jpeg" : "image/webp";
         await fs.setDoc(ref, {
           ownerId: uid,
           listingId: listingId,
           index: i,
-          contentType: "image/webp",
+          contentType: mime,
           image: fs.Bytes.fromUint8Array(bytes),
           createdAt: fs.serverTimestamp(),
         });
@@ -683,6 +695,7 @@ function authMessage(code) {
       text("sell-error", "Saved.");
       var form = document.getElementById("sell-form");
       if (form && !state.editing) form.reset();
+      if (window.CarDealsSell) window.CarDealsSell.resetPhotos();
     } catch (err) {
       text("sell-error", err && err.message === "size" ? "A photo was over 200 KB after compression." : authMessage(err && err.code));
     } finally {
@@ -784,8 +797,7 @@ function authMessage(code) {
   if (sellForm) {
     sellForm.addEventListener("submit", async function (event) {
       event.preventDefault();
-      var input = document.getElementById("sell-photos");
-      var files = input && input.files ? Array.prototype.slice.call(input.files, 0, 6) : [];
+      var files = window.CarDealsSell ? window.CarDealsSell.files() : [];
       var blobs = [];
       var i;
       text("sell-error", "");

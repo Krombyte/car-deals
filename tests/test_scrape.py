@@ -331,6 +331,14 @@ class ClientSafetyTests(unittest.TestCase):
         self.assertIn('id="price-min"', html)
         self.assertIn('id="price-max"', html)
         self.assertIn('id="help-btn"', html)
+        self.assertIn('id="sell-photos-choose"', html)
+        self.assertIn('id="sell-name"', html)
+        self.assertIn('id="auth-or"', html)
+        self.assertNotIn(">Photos<input", html)
+        self.assertIn("auth-action.html", (ROOT / ".github" / "workflows" / "pages.yml").read_text(encoding="utf-8"))
+        rules = (ROOT / "firestore.rules").read_text(encoding="utf-8")
+        self.assertIn('contentType == "image/jpeg"', rules)
+        self.assertIn("displayName", rules)
         self.assertIn('role="dialog"', html)
         for path in (ROOT / "js").glob("*.js"):
             src = path.read_text(encoding="utf-8")
@@ -352,6 +360,7 @@ class ClientSafetyTests(unittest.TestCase):
         import subprocess
 
         subprocess.check_call(["node", "tests/test_price_filter.js"], cwd=ROOT)
+        subprocess.check_call(["node", "tests/test_sell_fields.js"], cwd=ROOT)
 
 
 if __name__ == "__main__":

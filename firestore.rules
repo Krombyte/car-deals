@@ -66,7 +66,7 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly(["ownerId", "listingId", "index", "contentType", "image", "createdAt"])
           && request.resource.data.ownerId == request.auth.uid
           && request.resource.data.listingId == listingId
-          && request.resource.data.contentType == "image/webp"
+          && (request.resource.data.contentType == "image/webp" || request.resource.data.contentType == "image/jpeg")
           && request.resource.data.image is bytes
           && request.resource.data.image.size() > 0
           && request.resource.data.image.size() <= 204800
