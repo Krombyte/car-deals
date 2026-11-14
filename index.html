@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Car Deals — used cars near Madison, WI</title>
+  <meta name="description" content="Used car deals near Madison, Wisconsin, ranked by how far below the estimated market they are.">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta name="theme-color" content="#0B0F14">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://images.craigslist.org; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; upgrade-insecure-requests">
+  <script src="js/theme-init.js"></script>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+  <a class="skip" href="#deals">Skip to deals</a>
+  <header class="header">
+    <div class="wrap header-inner">
+      <a class="brand" href="./">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M13.2 2 4 13.2h6.4L9.2 22 20 10.2h-6.6L13.2 2z"/></svg>
+        <span>Car Deals</span>
+      </a>
+      <div class="tabs" role="tablist" aria-label="Listing views">
+        <button type="button" class="tab" id="tab-browse" role="tab" aria-selected="true" aria-controls="deals">Browse all</button>
+        <button type="button" class="tab" id="tab-mustangs" role="tab" aria-selected="false" aria-controls="deals">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" d="m12 3 2.4 5.4 5.8.6-4.4 3.8 1.3 5.7L12 15.8 6.9 18.5l1.3-5.7L3.8 9l5.8-.6L12 3z"/></svg>
+          Mustang Picks
+        </button>
+        <button type="button" class="tab" id="tab-saved" role="tab" aria-selected="false" aria-controls="deals">Saved</button>
+      </div>
+      <form class="search" id="search-form" role="search">
+        <label class="sr-only" for="q">Search make, model, or city</label>
+        <input id="q" type="search" placeholder="Search make, model, or city" autocomplete="off" enterkeyhint="search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.25" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m16 16 4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </form>
+      <div class="header-tools">
+        <div class="theme" role="group" aria-label="Color theme">
+          <button type="button" id="theme-light" aria-pressed="false" aria-label="Light theme">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/></svg>
+          </button>
+          <button type="button" id="theme-dark" aria-pressed="true" aria-label="Dark theme">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M14.5 3.2a8.2 8.2 0 1 0 6.3 12.6A7.2 7.2 0 0 1 14.5 3.2z"/></svg>
+          </button>
+        </div>
+        <p class="live"><span class="live-dot" aria-hidden="true"></span><span id="live-text">Live</span></p>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="wrap">
+      <section class="hero">
+        <h1>Used car deals near Madison, WI.</h1>
+        <p>Browse every make and model, ranked by how far below market they are.</p>
+      </section>
+    </div>
+
+    <div class="filter-bar">
+      <div class="wrap filters">
+        <div class="chips" role="toolbar" aria-label="Body type and quick filters">
+          <button type="button" class="chip" data-body="" id="chip-all" aria-pressed="true">All types</button>
+          <button type="button" class="chip" data-body="Sedan" aria-pressed="false">Sedan</button>
+          <button type="button" class="chip" data-body="SUV" aria-pressed="false">SUV</button>
+          <button type="button" class="chip" data-body="Truck" aria-pressed="false">Truck</button>
+          <button type="button" class="chip" data-body="Coupe" aria-pressed="false">Coupe</button>
+          <button type="button" class="chip" data-body="Hatchback" aria-pressed="false">Hatchback</button>
+          <button type="button" class="chip" id="chip-5k" aria-pressed="false">Under $5k</button>
+          <button type="button" class="chip" id="chip-120" aria-pressed="false">Under 120k mi</button>
+        </div>
+        <div class="dropdowns">
+          <label class="select">
+            <span class="sr-only">Filter by make</span>
+            <select id="make"><option value="">Make</option></select>
+            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </label>
+          <label class="select">
+            <span class="sr-only">Maximum price</span>
+            <select id="price">
+              <option value="">Price</option>
+              <option value="1000">Under $1,000</option>
+              <option value="2000">Under $2,000</option>
+              <option value="3000">Under $3,000</option>
+              <option value="5000">Under $5,000</option>
+            </select>
+            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </label>
+          <label class="select">
+            <span class="sr-only">Maximum mileage</span>
+            <select id="miles">
+              <option value="">Mileage</option>
+              <option value="60000">Under 60k mi</option>
+              <option value="80000">Under 80k mi</option>
+              <option value="100000">Under 100k mi</option>
+              <option value="120000">Under 120k mi</option>
+            </select>
+            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </label>
+          <label class="select">
+            <span class="sr-only">Maximum distance</span>
+            <select id="distance">
+              <option value="">Distance</option>
+              <option value="25">Within 25 mi</option>
+              <option value="50">Within 50 mi</option>
+              <option value="100">Within 100 mi</option>
+              <option value="200">Within 200 mi</option>
+              <option value="300">Within 300 mi</option>
+            </select>
+            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </label>
+          <label class="select">
+            <span class="sr-only">Sort</span>
+            <span class="select-prefix" aria-hidden="true">Sort:</span>
+            <select id="sort">
+              <option value="savings">Biggest savings</option>
+              <option value="price">Price: low to high</option>
+              <option value="newest">Newest</option>
+              <option value="miles">Lowest miles</option>
+            </select>
+            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="meta-row">
+        <p class="count" id="count">Loading deals near Madison…</p>
+        <button type="button" class="text-btn" id="clear" hidden>Clear filters</button>
+        <button type="button" class="text-btn" id="pending-btn" hidden>New deals</button>
+      </div>
+      <div id="deals" class="grid" aria-busy="true">
+        <article class="card skeleton" aria-hidden="true"><div class="card-media"><div class="sk-photo"></div></div><div class="card-body"><div class="sk-line w70"></div><div class="sk-line w40"></div><div class="sk-line w90"></div><div class="sk-line w55"></div><div class="sk-line w35"></div><div class="sk-line w45"></div></div></article>
+        <article class="card skeleton" aria-hidden="true"><div class="card-media"><div class="sk-photo"></div></div><div class="card-body"><div class="sk-line w70"></div><div class="sk-line w40"></div><div class="sk-line w90"></div><div class="sk-line w55"></div><div class="sk-line w35"></div><div class="sk-line w45"></div></div></article>
+        <article class="card skeleton" aria-hidden="true"><div class="card-media"><div class="sk-photo"></div></div><div class="card-body"><div class="sk-line w70"></div><div class="sk-line w40"></div><div class="sk-line w90"></div><div class="sk-line w55"></div><div class="sk-line w35"></div><div class="sk-line w45"></div></div></article>
+        <article class="card skeleton" aria-hidden="true"><div class="card-media"><div class="sk-photo"></div></div><div class="card-body"><div class="sk-line w70"></div><div class="sk-line w40"></div><div class="sk-line w90"></div><div class="sk-line w55"></div><div class="sk-line w35"></div><div class="sk-line w45"></div></div></article>
+        <article class="card skeleton" aria-hidden="true"><div class="card-media"><div class="sk-photo"></div></div><div class="card-body"><div class="sk-line w70"></div><div class="sk-line w40"></div><div class="sk-line w90"></div><div class="sk-line w55"></div><div class="sk-line w35"></div><div class="sk-line w45"></div></div></article>
+        <article class="card skeleton" aria-hidden="true"><div class="card-media"><div class="sk-photo"></div></div><div class="card-body"><div class="sk-line w70"></div><div class="sk-line w40"></div><div class="sk-line w90"></div><div class="sk-line w55"></div><div class="sk-line w35"></div><div class="sk-line w45"></div></div></article>
+        <article class="card skeleton" aria-hidden="true"><div class="card-media"><div class="sk-photo"></div></div><div class="card-body"><div class="sk-line w70"></div><div class="sk-line w40"></div><div class="sk-line w90"></div><div class="sk-line w55"></div><div class="sk-line w35"></div><div class="sk-line w45"></div></div></article>
+        <article class="card skeleton" aria-hidden="true"><div class="card-media"><div class="sk-photo"></div></div><div class="card-body"><div class="sk-line w70"></div><div class="sk-line w40"></div><div class="sk-line w90"></div><div class="sk-line w55"></div><div class="sk-line w35"></div><div class="sk-line w45"></div></div></article>
+        <article class="card skeleton" aria-hidden="true"><div class="card-media"><div class="sk-photo"></div></div><div class="card-body"><div class="sk-line w70"></div><div class="sk-line w40"></div><div class="sk-line w90"></div><div class="sk-line w55"></div><div class="sk-line w35"></div><div class="sk-line w45"></div></div></article>
+      </div>
+      <div id="empty" class="empty" hidden>
+        <h2 id="empty-title">No listings to show right now.</h2>
+        <p id="empty-body">Listings appear here as they are found.</p>
+        <button type="button" id="empty-action">Retry</button>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>Market values are estimates from comparable listings in this dataset, not a Kelley Blue Book appraisal. A bargain means the asking price is at least 15% under that estimate, and a bad deal means it is more than 15% over. Every card links to the original post. Have a mechanic inspect a car before you buy it.</p>
+      <p id="updated"></p>
+    </div>
+  </footer>
+
+  <div id="toast" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+
+  <template id="photo-fallback">
+    <div class="photo-fallback" aria-hidden="true">
+      <svg viewBox="0 0 120 80" fill="none">
+        <path d="M18 52h84M26 52l8-16h28l10 8h22l8 8" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+        <circle cx="40" cy="54" r="6" stroke="currentColor" stroke-width="3"/>
+        <circle cx="82" cy="54" r="6" stroke="currentColor" stroke-width="3"/>
+      </svg>
+    </div>
+  </template>
+
+  <noscript>
+    <p class="wrap">Car Deals needs JavaScript to load the listing file. The page does not use accounts, cookies, or analytics.</p>
+  </noscript>
+  <script src="js/app.js"></script>
+</body>
+</html>
