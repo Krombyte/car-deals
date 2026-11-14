@@ -36,6 +36,21 @@ Browse works even if these steps are not done. Sign-in then shows a specific err
 
 Email/Password accounts must verify their email before Sell your car will publish. Google accounts are usually already verified.
 
+### Email links must open on this site
+
+The browser API key is limited to `krombyte.github.io` and localhost. Firebase's default link host, `https://car-deals-d0ebf.firebaseapp.com/__/auth/action`, is outside that list, so the link answers 403 and the page says the code expired or was already used. That can happen on the first click.
+
+Point the emails at this site instead:
+
+1. Firebase console → Authentication → Templates.
+2. Open **Email address verification**. Click the pencil, then **Customize action URL**.
+3. Set it to `https://krombyte.github.io/car-deals/auth-action.html` and save.
+4. Do the same for **Password reset**.
+
+The message in the email will then open `auth-action.html` on `krombyte.github.io`. That page calls Firebase only after the person clicks a button, so a mail scanner that merely opens the link does not use up the one-time code. `krombyte.github.io` must stay an authorized domain. Do not add `car-deals-d0ebf.firebaseapp.com` to the API key referrer list for this.
+
+After you change the templates, send yourself a new verification email. An older message still points at the blocked host.
+
 ## Firestore rules
 
 The default database exists and starts empty. Deploy the rules in this repo or every private-listing read and write is denied:

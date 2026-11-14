@@ -23,7 +23,22 @@
     };
   }
 
-  function encode(image, edge, quality) {
+  function appendLimited(current, incoming, max) {
+    var next = (current || []).slice();
+    var cap = max || MAX_PHOTOS;
+    var dropped = 0;
+    var i;
+    for (i = 0; i < (incoming || []).length; i += 1) {
+      if (next.length >= cap) {
+        dropped += incoming.length - i;
+        break;
+      }
+      next.push(incoming[i]);
+    }
+    return { items: next, dropped: dropped };
+  }
+
+  function encode(image, edge, quality, mime) {
     var size = fittedSize(image.naturalWidth || image.width, image.naturalHeight || image.height, edge);
     var canvas = document.createElement("canvas");
     canvas.width = size.width;
@@ -32,7 +47,11 @@
     if (!ctx) return Promise.resolve(null);
     ctx.drawImage(image, 0, 0, size.width, size.height);
     return new Promise(function (resolve) {
-      canvas.toBlob(function (blob) { resolve(blob); }, PHOTO_TYPE, quality);
+      if (!canvas.toBlob) {
+        resolve(null);
+        return;
+      }
+      canvas.toBlob(function (blob) { resolve(blob); }, mime, quality);
     });
   }
 
@@ -47,22 +66,31 @@
         URL.revokeObjectURL(url);
         var edges = [1280, 960, 720, 480];
         var qualities = [0.8, 0.65, 0.5, 0.4];
+        var mimes = [PHOTO_TYPE, "image/jpeg"];
+        var mimeIndex = 0;
         var edgeIndex = 0;
         var qualityIndex = 0;
         function next() {
-          if (edgeIndex >= edges.length) {
+          if (mimeIndex >= mimes.length) {
             reject(new Error("size"));
             return;
           }
-          encode(image, edges[edgeIndex], qualities[qualityIndex]).then(function (blob) {
-            if (blob && blob.type === PHOTO_TYPE && blob.size > 0 && blob.size <= MAX_BYTES) {
-              resolve(blob);
-              return;
+          encode(image, edges[edgeIndex], qualities[qualityIndex], mimes[mimeIndex]).then(function (blob) {
+            var mime = mimes[mimeIndex];
+            if (blob && (blob.type === mime || blob.type === "") && blob.size > 0 && blob.size <= MAX_BYTES) {
+              if (blob.type === mime) {
+                resolve(blob);
+                return;
+              }
             }
             qualityIndex += 1;
             if (qualityIndex >= qualities.length) {
               qualityIndex = 0;
               edgeIndex += 1;
+            }
+            if (edgeIndex >= edges.length) {
+              edgeIndex = 0;
+              mimeIndex += 1;
             }
             next();
           }).catch(function () { reject(new Error("encode")); });
@@ -83,6 +111,7 @@
     MAX_PHOTOS: MAX_PHOTOS,
     PHOTO_TYPE: PHOTO_TYPE,
     fittedSize: fittedSize,
+    appendLimited: appendLimited,
     compressFile: compressFile,
   };
 });

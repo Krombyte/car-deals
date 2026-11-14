@@ -240,9 +240,10 @@
           <label class="field" id="auth-password-label">Password<input id="auth-password" type="password" autocomplete="current-password" maxlength="100"></label>
           <label class="field" id="auth-name-label" hidden>Display name<input id="auth-name" type="text" maxlength="80" autocomplete="nickname"></label>
           <p id="auth-error" class="form-error" role="alert"></p>
-          <button type="submit" class="primary" id="auth-submit">Sign in</button>
+          <button type="submit" class="primary auth-wide" id="auth-submit">Sign in</button>
         </form>
-        <button type="button" class="primary" id="auth-google">Continue with Google</button>
+        <p class="auth-or" id="auth-or"><span>or</span></p>
+        <button type="button" class="google-btn" id="auth-google">Continue with Google</button>
       </div>
       <div id="auth-signed-in" hidden>
         <p id="auth-hello"></p>
@@ -266,12 +267,27 @@
         <button type="button" id="sell-verify-btn" hidden>Resend verification email</button>
       </div>
       <form id="sell-form" class="form-grid two" hidden>
-        <label class="field">Year<input id="sell-year" inputmode="numeric" maxlength="4" required></label>
-        <label class="field">Make<input id="sell-make" maxlength="40" required></label>
-        <label class="field">Model<input id="sell-model" maxlength="40" required></label>
-        <label class="field">Trim<input id="sell-trim" maxlength="80"></label>
-        <label class="field">Price<input id="sell-price" inputmode="numeric" maxlength="7" required></label>
-        <label class="field">Mileage<input id="sell-miles" inputmode="numeric" maxlength="7" required></label>
+        <label class="field">Year
+          <input id="sell-year" inputmode="numeric" maxlength="4" list="sell-year-list" autocomplete="off" required>
+        </label>
+        <datalist id="sell-year-list"></datalist>
+        <div class="field">
+          <label for="sell-make">Make</label>
+          <input id="sell-make" role="combobox" aria-expanded="false" aria-controls="sell-make-list" maxlength="40" autocomplete="off" required>
+          <ul id="sell-make-list" class="suggest" role="listbox" hidden></ul>
+        </div>
+        <div class="field" id="sell-model-wrap" hidden>
+          <label for="sell-model">Model</label>
+          <input id="sell-model" role="combobox" aria-expanded="false" aria-controls="sell-model-list" maxlength="40" autocomplete="off" required>
+          <ul id="sell-model-list" class="suggest" role="listbox" hidden></ul>
+        </div>
+        <div class="field">
+          <label for="sell-trim">Trim</label>
+          <input id="sell-trim" role="combobox" aria-expanded="false" aria-controls="sell-trim-list" maxlength="80" autocomplete="off">
+          <ul id="sell-trim-list" class="suggest" role="listbox" hidden></ul>
+        </div>
+        <label class="field">Price<input id="sell-price" inputmode="numeric" maxlength="7" autocomplete="off" required></label>
+        <label class="field">Mileage<input id="sell-miles" inputmode="numeric" maxlength="7" autocomplete="off" required></label>
         <label class="field">Title status
           <select id="sell-title-status">
             <option value="clean">Clean</option>
@@ -283,8 +299,13 @@
         <label class="field">State<input id="sell-state" maxlength="2" required></label>
         <label class="field">ZIP<input id="sell-zip" inputmode="numeric" maxlength="10" required></label>
         <label class="field field-wide">Description<textarea id="sell-description" maxlength="4000" rows="5"></textarea></label>
-        <p class="help-note">Up to 6 photos. This browser resizes them to WebP, 1280px on the long side, under 200 KB each, and saves them in Firestore. Cloud Storage is not used on the Spark plan.</p>
-        <label class="field">Photos<input id="sell-photos" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple></label>
+        <div class="photo-picker field-wide">
+          <p class="field-label" id="sell-photos-label">Photos</p>
+          <input id="sell-photos" class="visually-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple aria-labelledby="sell-photos-label">
+          <button type="button" class="primary" id="sell-photos-choose">Choose photos</button>
+          <ul id="sell-photo-list" class="photo-picks"></ul>
+          <p id="sell-photo-note" class="help-note">Up to 6 photos. Choosing more adds to this list. They are resized in this browser before they are saved.</p>
+        </div>
         <fieldset>
           <legend>Contact on the listing</legend>
           <label><input type="radio" name="sell-contact" value="email"> Email</label>
@@ -319,9 +340,11 @@
       </div>
     </div>
   </div>
+  <script src="js/vehicles.js"></script>
   <script src="js/firebase-config.js"></script>
   <script src="js/price-filter.js"></script>
   <script src="js/photos.js"></script>
+  <script src="js/sell-fields.js"></script>
   <script src="js/a11y.js"></script>
   <script src="js/help-prompt.js"></script>
   <script type="module" src="js/firebase-client.js"></script>
