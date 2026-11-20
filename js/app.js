@@ -182,10 +182,6 @@
     };
   }
 
-  function isMustang(listing) {
-    return listing.make.toLowerCase() === "ford" && listing.model.toLowerCase().indexOf("mustang") !== -1;
-  }
-
   function isFresh(listing) {
     var iso = listing.posted_at || listing.first_seen;
     var t = Date.parse(iso || "");
@@ -196,7 +192,6 @@
   function matches(listing) {
     if (listing.featured === true) return false;
     if (state.hiddenNew.has(listing.id)) return false;
-    if (state.tab === "mustangs" && !isMustang(listing)) return false;
     if (state.tab === "saved" && !state.saved.has(listing.id)) return false;
     if (state.body && listing.body_type !== state.body) return false;
     if (window.CarDealsFilters && !window.CarDealsFilters.matchesPrice(listing.price, state.priceMin, state.priceMax)) return false;
@@ -264,7 +259,7 @@
   function readUrl() {
     var params = new URLSearchParams(window.location.search);
     var tab = params.get("tab");
-    state.tab = tab === "mustangs" || tab === "saved" ? tab : "browse";
+    state.tab = tab === "saved" || tab === "favorites" ? "saved" : "browse";
     state.query = (params.get("q") || "").slice(0, 80);
     state.body = BODY_FROM_URL[(params.get("body") || "").toLowerCase()] || "";
     state.under120 = params.get("under120") === "1";
@@ -349,7 +344,7 @@
       chip.setAttribute("aria-pressed", chip.getAttribute("data-preset") === preset ? "true" : "false");
     });
     $("chip-120").setAttribute("aria-pressed", state.under120 ? "true" : "false");
-    ["browse", "mustangs", "saved"].forEach(function (name) {
+    ["browse", "saved"].forEach(function (name) {
       $("tab-" + name).setAttribute("aria-selected", state.tab === name ? "true" : "false");
     });
     $("clear").hidden = !filtersActive();
@@ -530,7 +525,7 @@
     var heart = el("button", "heart");
     heart.type = "button";
     heart.setAttribute("aria-pressed", state.saved.has(listing.id) ? "true" : "false");
-    heart.setAttribute("aria-label", (state.saved.has(listing.id) ? "Remove " : "Save ") + listing.title);
+    heart.setAttribute("aria-label", (state.saved.has(listing.id) ? "Remove from favorites: " : "Add to favorites: ") + listing.title);
     heart.appendChild(svg([{ d: "M12 20s-7-4.4-9.2-8.2C1 8.8 2.4 5.5 5.6 5.2 7.4 5 9 6 12 8.4 15 6 16.6 5 18.4 5.2c3.2.3 4.6 3.6 2.8 6.6C19 15.6 12 20 12 20z" }]));
     heart.addEventListener("click", function () {
       toggleSaved(listing, heart);
@@ -700,13 +695,9 @@
       body.textContent = "Try widening distance, raising the mileage cap, or clearing a filter.";
       action.textContent = "Clear filters";
     } else if (mode === "saved") {
-      title.textContent = "No saved cars yet.";
-      body.textContent = "Use the heart on a deal to keep it here. Saved cars stay on this device only.";
+      title.textContent = "No favorites yet.";
+      body.textContent = "Tap the heart on a car to save it here.";
       action.textContent = "Browse all";
-    } else if (mode === "mustangs") {
-      title.textContent = "No Mustang picks match.";
-      body.textContent = "Try clearing a filter, or check back after the next update.";
-      action.textContent = filtersActive() ? "Clear filters" : "Browse all";
     } else {
       title.textContent = "No listings to show right now.";
       body.textContent = "Listings appear here as they are found.";
@@ -757,7 +748,6 @@
       grid.replaceChildren();
       if (!state.listings.length) setEmpty("error");
       else if (state.tab === "saved") setEmpty("saved");
-      else if (state.tab === "mustangs" && !filtersActive()) setEmpty("mustangs");
       else setEmpty("filters");
       return;
     }
@@ -784,7 +774,7 @@
     persistSaved();
     var saved = state.saved.has(listing.id);
     button.setAttribute("aria-pressed", saved ? "true" : "false");
-    button.setAttribute("aria-label", (saved ? "Remove " : "Save ") + listing.title);
+    button.setAttribute("aria-label", (saved ? "Remove from favorites: " : "Add to favorites: ") + listing.title);
     if (state.tab === "saved") render();
   }
 
@@ -1010,7 +1000,7 @@
         load();
         return;
       }
-      if (mode === "saved" || (mode === "mustangs" && !filtersActive())) {
+      if (mode === "saved") {
         state.tab = "browse";
         writeUrl();
         render();
