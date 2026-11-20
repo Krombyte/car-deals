@@ -14,9 +14,9 @@ Car Deals lists used cars near Madison, Wisconsin. Asking prices are the seller'
 
 Click the photo or the card. The details stay on this page. Close, Esc, or the dark backdrop closes them. View listing opens the original post in a new tab. Craigslist does not publish the seller's name. Contact is through that listing. A private seller shows the name and the contact method they chose.
 
-## Saving a car
+## Favorites
 
-The heart saves a car. Guests keep that list on this device. A signed-in account syncs it.
+The heart adds a car to Favorites. Guests keep that list on this device. A signed-in account syncs it. There is no built-in Mustang list.
 
 ## Accounts
 
@@ -25,10 +25,6 @@ Sign in, Create account, and Reset password are on the Sign in button. Google si
 ## Selling
 
 Sell opens the form. You need to be signed in and email-verified. Enter year, make, model, trim, price, mileage, title status, city, state, ZIP, description, up to 6 photos, and how buyers should contact you. Photos are resized in the browser to WebP and saved with the listing. Cloud Storage is not used. Only a clean title is published. Your car appears in Browse all with a Private seller badge. You can edit or delete it. Report listing sends a note about a listing.
-
-## Mustang Picks
-
-Mustang Picks shows Ford Mustangs from the same list. The photos are not personalized per viewer.
 
 ## Analytics
 

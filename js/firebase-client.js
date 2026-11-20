@@ -633,31 +633,50 @@ function authMessage(code) {
   async function writePhotos(listingId, uid, blobs) {
     var fs = state.fs;
     var i;
-    for (i = 0; i < 6; i += 1) {
+    for (i = 0; i < blobs.length; i += 1) {
       var ref = fs.doc(state.db, "listings", listingId, "photos", String(i));
-      if (i < blobs.length) {
-        var bytes = new Uint8Array(await blobs[i].arrayBuffer());
-        if (bytes.length > 200 * 1024) throw new Error("size");
-        var mime = blobs[i].type === "image/jpeg" ? "image/jpeg" : "image/webp";
-        await fs.setDoc(ref, {
-          ownerId: uid,
-          listingId: listingId,
-          index: i,
-          contentType: mime,
-          image: fs.Bytes.fromUint8Array(bytes),
-          createdAt: fs.serverTimestamp(),
-        });
-      } else {
-        try { await fs.deleteDoc(ref); } catch (err) { /* no photo in this slot */ }
-      }
+      var bytes = new Uint8Array(await blobs[i].arrayBuffer());
+      if (bytes.length > 200 * 1024) throw new Error("size");
+      var mime = blobs[i].type === "image/jpeg" ? "image/jpeg" : "image/webp";
+      await fs.setDoc(ref, {
+        ownerId: uid,
+        listingId: listingId,
+        index: i,
+        contentType: mime,
+        image: fs.Bytes.fromUint8Array(bytes),
+        createdAt: fs.serverTimestamp(),
+      });
     }
+    for (i = blobs.length; i < 6; i += 1) {
+      var extra = fs.doc(state.db, "listings", listingId, "photos", String(i));
+      var existing = await fs.getDoc(extra);
+      if (existing.exists()) await fs.deleteDoc(extra);
+    }
+  }
+
+  async function freshUser() {
+    if (!state.user) return null;
+    await state.user.reload();
+    await state.user.getIdToken(true);
+    return state.user;
+  }
+
+  function writeError(step, err) {
+    if (err && err.message === "size") return "A photo was over 200 KB after compression.";
+    if (err && err.code === "permission-denied") {
+      if (step === "photos") {
+        return "Firestore rejected the photos. If you just verified your email, try again in a moment. JPEG photos also need the latest rules published.";
+      }
+      return "Firestore rejected the listing. Publish the Firestore rules, and use a verified email.";
+    }
+    return authMessage(err && err.code);
   }
 
   async function publishListing(blobs) {
     if (state.busy) return;
-    var user = state.user;
+    var user = await freshUser();
     if (!user || !user.emailVerified) {
-      text("sell-error", "Verify your email before listing a car.");
+      text("sell-error", "Verify your email before listing a car. If you just verified it, wait a moment and try again.");
       return;
     }
     var data = readSellForm();
@@ -667,6 +686,7 @@ function authMessage(code) {
     text("sell-error", state.editing ? "Saving…" : "Publishing…");
     var fs = state.fs;
     var listingId = state.editing && state.editing.firestore_id;
+    var step = "listing";
     try {
       if (!listingId) {
         var ref = fs.doc(fs.collection(state.db, "listings"));
@@ -683,10 +703,12 @@ function authMessage(code) {
       }
       var photoCount = state.editing ? state.editing.photo_count || 0 : 0;
       if (blobs && blobs.length) {
+        step = "photos";
         text("sell-error", "Saving photos…");
         await writePhotos(listingId, user.uid, blobs);
         photoCount = blobs.length;
       }
+      step = "listing";
       await fs.updateDoc(fs.doc(state.db, "listings", listingId), Object.assign({
         photoCount: photoCount,
         updatedAt: fs.serverTimestamp(),
@@ -697,7 +719,7 @@ function authMessage(code) {
       if (form && !state.editing) form.reset();
       if (window.CarDealsSell) window.CarDealsSell.resetPhotos();
     } catch (err) {
-      text("sell-error", err && err.message === "size" ? "A photo was over 200 KB after compression." : authMessage(err && err.code));
+      text("sell-error", writeError(step, err));
     } finally {
       state.busy = false;
     }

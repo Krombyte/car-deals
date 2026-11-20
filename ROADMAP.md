@@ -1,8 +1,8 @@
 # Roadmap
 
-## Mustang Picks imagery
+## Favorites
 
-Mustang Picks should eventually show imagery personalized for the viewer instead of one default photo set for everyone. That is not built. The tab still filters the shared list to Ford Mustangs.
+The old Mustang Picks tab is gone. Each person builds a Favorites list with the heart. A later version could still personalize Mustang imagery, but there is no shared default list.
 
 ## Later, not in this version
 
