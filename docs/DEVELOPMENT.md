@@ -14,7 +14,7 @@ Open http://127.0.0.1:8080/
 
 The page loads `data/listings.json` with a relative URL, so the same files work locally and at `https://krombyte.github.io/car-deals/`.
 
-Filters, the Mustang and Saved tabs, and the sort order are stored in the query string. Hearts and the theme are stored in the browser only until someone signs in, when saved cars also sync to Firestore.
+Filters, the Favorites tab, and the sort order are stored in the query string. Hearts and the theme are stored in the browser only until someone signs in, when saved cars also sync to Firestore.
 
 The default theme is teal on a dark navy canvas. The sun/moon control switches to an off-white page with a navy accent. The first visit follows `prefers-color-scheme` when nothing has been saved yet.
 
@@ -118,7 +118,7 @@ There is no featured listing. `js/app.js` keeps a slot that would render one car
 
 ## Layout
 
-- Header: wordmark, Browse all / Mustang Picks / Saved, search (make, model, or city), Sell, Sign in, theme toggle, and `Live · N new today`.
+- Header: wordmark, Browse all / Favorites, search (make, model, or city), Sell, Sign in, theme toggle, and `Live · N new today`.
 - Filters: body-type chips, price presets, Under 120k mi, Min and Max price, and Make, Mileage, Distance, and Sort. Default sort is biggest savings.
 - Cards: 3:2 photo, deal badge, heart, price, estimated market, source, View listing.
 - A photo or card click opens the listing dialog on the same page.
